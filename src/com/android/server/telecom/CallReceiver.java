@@ -70,7 +70,7 @@ public class CallReceiver extends BroadcastReceiver {
             clientExtras = intent.getBundleExtra(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS);
         }
         if (clientExtras == null) {
-            clientExtras = new Bundle();
+            clientExtras = Bundle.EMPTY;
         }
 
         final boolean isDefaultDialer = intent.getBooleanExtra(KEY_IS_DEFAULT_DIALER, false);
@@ -113,7 +113,7 @@ public class CallReceiver extends BroadcastReceiver {
             clientExtras = intent.getBundleExtra(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS);
         }
         if (clientExtras == null) {
-            clientExtras = new Bundle();
+            clientExtras = Bundle.EMPTY;
         }
 
         Log.d(TAG, "Processing incoming call from connection service [%s]",
