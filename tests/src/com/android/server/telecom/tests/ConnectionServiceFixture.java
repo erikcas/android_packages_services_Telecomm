@@ -148,6 +148,12 @@ public class ConnectionServiceFixture implements TestFixture<IConnectionService>
         public void onPostDialContinue(String callId, boolean proceed) throws RemoteException { }
 
         @Override
+        public void setLocalCallHold(String callId, boolean lchStatus) throws RemoteException { }
+
+        @Override
+        public void addParticipantWithConference(String callId, String recipients) {}
+
+        @Override
         public IBinder asBinder() {
             return this;
         }

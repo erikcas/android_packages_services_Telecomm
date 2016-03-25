@@ -36,6 +36,7 @@ import android.telecom.PhoneAccountHandle;
 import android.telecom.StatusHints;
 import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
+import android.telephony.TelephonyManager;
 
 import com.android.internal.telecom.IConnectionService;
 import com.android.internal.telecom.IConnectionServiceAdapter;
@@ -113,6 +114,27 @@ final class ConnectionServiceWrapper extends ServiceBinder {
                             mCallsManager.markCallAsRinging(call);
                         } else {
                             // Log.w(this, "setRinging, unknown call id: %s", msg.obj);
+                        }
+                    }
+                }
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override
+        public void resetCdmaConnectionTime(String callId) {
+            long token = Binder.clearCallingIdentity();
+            try {
+                synchronized (mLock) {
+                    logIncoming("resetCdmaConnectionTime %s", callId);
+                    if (mCallIdMapper.isValidCallId(callId) ||
+                            mCallIdMapper.isValidConferenceId(callId)) {
+                        Call call = mCallIdMapper.getCall(callId);
+                        if (call != null) {
+                            mCallsManager.resetCdmaConnectionTime(call);
+                        } else {
+                            // Log.w(this, "resetCdmaConnectionTime, unknown call id: %s", msg.obj);
                         }
                     }
                 }
@@ -282,6 +304,10 @@ final class ConnectionServiceWrapper extends ServiceBinder {
                             childCall.setParentCall(null);
                         } else {
                             Call conferenceCall = mCallIdMapper.getCall(conferenceCallId);
+                            if (conferenceCall.getTargetPhoneAccount() == null) {
+                                PhoneAccountHandle ph = childCall.getTargetPhoneAccount();
+                                conferenceCall.setTargetPhoneAccount(ph);
+                            }
                             childCall.setParentCall(conferenceCall);
                         }
                     } else {
@@ -313,7 +339,12 @@ final class ConnectionServiceWrapper extends ServiceBinder {
                             // the failure event all the way to InCallUI instead of stopping
                             // it here. That way we can also handle the UI of notifying that
                             // the merged has failed.
-                            call.setConnectionCapabilities(call.getConnectionCapabilities(), true);
+                            Bundle extras = call.getExtras();
+                            if (extras != null) {
+                                extras.putInt("MergeFail", new java.util.Random().nextInt());
+                                call.setExtras(extras);
+                            }
+                            mCallsManager.onMergeFailed(call);
                         } else {
                             Log.w(this, "setConferenceMergeFailed, unknown call id: %s", callId);
                         }
@@ -496,7 +527,14 @@ final class ConnectionServiceWrapper extends ServiceBinder {
                     if (mCallIdMapper.isValidCallId(callId)
                             || mCallIdMapper.isValidConferenceId(callId)) {
                         Call call = mCallIdMapper.getCall(callId);
-                        if (call != null) {
+                        if (call != null && extras != null) {
+                            if (extras.getParcelable(TelephonyManager.EMR_DIAL_ACCOUNT) instanceof
+                                    PhoneAccountHandle) {
+                                PhoneAccountHandle account = extras.
+                                        getParcelable(TelephonyManager.EMR_DIAL_ACCOUNT);
+                                Log.d(this, "setTargetPhoneAccount, account = " + account);
+                                call.setTargetPhoneAccount(account);
+                            }
                             call.setExtras(extras);
                         }
                     }
@@ -815,6 +853,18 @@ final class ConnectionServiceWrapper extends ServiceBinder {
         }
     }
 
+    /** @see ConnectionService#setLocalCallHold(String,int) */
+    void setLocalCallHold(Call call, boolean lchStatus) {
+        final String callId = mCallIdMapper.getCallId(call);
+        if (callId != null && isServiceValid("SetLocalCallHold")) {
+            try {
+                logOutgoing("SetLocalCallHold %s %b", mCallIdMapper.getCallId(call), lchStatus);
+                mServiceInterface.setLocalCallHold(mCallIdMapper.getCallId(call), lchStatus);
+            } catch (RemoteException e) {
+            }
+        }
+    }
+
     /** @see IConnectionService#stopDtmfTone(String) */
     void stopDtmfTone(Call call) {
         final String callId = mCallIdMapper.getCallId(call);
@@ -894,6 +944,17 @@ final class ConnectionServiceWrapper extends ServiceBinder {
                 mServiceInterface.splitFromConference(callId);
             } catch (RemoteException ignored) {
             }
+        }
+    }
+
+    void addParticipantWithConference(Call call, String recipients) {
+        final String callId = mCallIdMapper.getCallId(call);
+            if (isServiceValid("addParticipantWithConference")) {
+                try {
+                    logOutgoing("addParticipantWithConference %s, %s", recipients, callId);
+                    mServiceInterface.addParticipantWithConference(callId, recipients);
+                } catch (RemoteException ignored) {
+                }
         }
     }
 

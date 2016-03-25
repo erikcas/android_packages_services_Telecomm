@@ -165,6 +165,7 @@ final class CallAudioManager extends CallsManagerListenerBase
     private boolean mWasSpeakerOn;
     private int mMostRecentlyUsedMode = AudioManager.MODE_IN_CALL;
     private Call mCallToSpeedUpMTAudio = null;
+    boolean mUserSetAudioRoute = false;
 
     CallAudioManager(
             Context context,
@@ -232,14 +233,8 @@ final class CallAudioManager extends CallsManagerListenerBase
         Log.v(this, "onIncomingCallAnswered");
         int route = mCallAudioState.getRoute();
 
-        // We do two things:
-        // (1) If this is the first call, then we can to turn on bluetooth if available.
-        // (2) Unmute the audio for the new incoming call.
-        boolean isOnlyCall = mCallsManager.getCalls().size() == 1;
-        if (isOnlyCall && mBluetoothManager.isBluetoothAvailable()) {
-            mBluetoothManager.connectBluetoothAudio();
-            route = CallAudioState.ROUTE_BLUETOOTH;
-        }
+        // BT stack will connect audio upon receiving active call state.
+        // We unmute the audio for the new incoming call.
 
         setSystemAudioState(false /* isMute */, route, mCallAudioState.getSupportedRouteMask());
 
@@ -279,6 +274,7 @@ final class CallAudioManager extends CallsManagerListenerBase
         int newRoute = mCallAudioState.getRoute();  // start out with existing route
         if (newIsPluggedIn) {
             newRoute = CallAudioState.ROUTE_WIRED_HEADSET;
+            mUserSetAudioRoute = true;
         } else if (isCurrentlyWiredHeadset) {
             Call call = getForegroundCall();
             boolean hasLiveCall = call != null && call.isAlive();
@@ -457,12 +453,13 @@ final class CallAudioManager extends CallsManagerListenerBase
         updateAudioStreamAndMode(call);
         if (call != null && call.getState() == CallState.ACTIVE &&
                             call == mCallToSpeedUpMTAudio) {
-            mCallToSpeedUpMTAudio = null;
-        }
+                mCallToSpeedUpMTAudio = null;
+            }
     }
 
     private void setSystemAudioState(boolean isMuted, int route, int supportedRouteMask) {
         setSystemAudioState(false /* force */, isMuted, route, supportedRouteMask);
+        mUserSetAudioRoute = false;
     }
 
     private void setSystemAudioState(
@@ -489,7 +486,6 @@ final class CallAudioManager extends CallsManagerListenerBase
 
         // Audio route.
         if (mCallAudioState.getRoute() == CallAudioState.ROUTE_BLUETOOTH) {
-            turnOnSpeaker(false);
             turnOnBluetooth(true);
         } else if (mCallAudioState.getRoute() == CallAudioState.ROUTE_SPEAKER) {
             turnOnBluetooth(false);
@@ -512,7 +508,7 @@ final class CallAudioManager extends CallsManagerListenerBase
     }
 
     private void turnOnBluetooth(boolean on) {
-        if (mBluetoothManager.isBluetoothAvailable()) {
+        if (mBluetoothManager.isBluetoothAvailable() && mUserSetAudioRoute) {
             boolean isAlreadyOn = mBluetoothManager.isBluetoothAudioConnectedOrPending();
             if (on != isAlreadyOn) {
                 Log.i(this, "connecting bluetooth %s", on);
@@ -567,7 +563,10 @@ final class CallAudioManager extends CallsManagerListenerBase
                         AudioManager.STREAM_VOICE_CALL, mMostRecentlyUsedMode);
             } else if (!hasRingingForegroundCall() && mCallsManager.hasOnlyDisconnectedCalls()) {
                 Log.v(this, "updateAudioStreamAndMode : no ringing call");
-                abandonAudioFocus();
+                // Request to set audio mode normal. Here confirm if any call exist.
+                if (!hasAnyCalls()) {
+                    abandonAudioFocus();
+                }
             } else {
                 // mIsRinging is false, but there is a foreground ringing call present. Don't
                 // abandon audio focus immediately to prevent audio focus from getting lost between
@@ -671,7 +670,7 @@ final class CallAudioManager extends CallsManagerListenerBase
         //     *will* be routed to a bluetooth headset once the call is answered. In this case, just
         //     check if the headset is available. Note this only applies when we are dealing with
         //     the first call.
-        if (call != null && mBluetoothManager.isBluetoothAvailable()) {
+        if (call != null && mBluetoothManager.isBluetoothAvailable() && isBluetoothAudioOn()) {
             switch(call.getState()) {
                 case CallState.ACTIVE:
                 case CallState.ON_HOLD:
@@ -742,6 +741,10 @@ final class CallAudioManager extends CallsManagerListenerBase
             Binder.restoreCallingIdentity(ident);
         }
         return UserHandle.USER_OWNER;
+    }
+
+    private boolean hasAnyCalls() {
+        return mCallsManager.hasAnyCalls();
     }
 
     /**

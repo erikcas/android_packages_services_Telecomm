@@ -1,5 +1,6 @@
 package com.android.server.telecom;
 
+import com.android.internal.telephony.TelephonyProperties;
 import com.android.server.telecom.components.ErrorDialogActivity;
 
 import android.content.Context;
@@ -16,6 +17,8 @@ import android.telecom.VideoProfile;
 import android.telephony.DisconnectCause;
 import android.telephony.PhoneNumberUtils;
 import android.widget.Toast;
+
+import org.codeaurora.QtiVideoCallConstants;
 
 /**
  * Single point of entry for all outgoing and incoming calls.
@@ -64,15 +67,25 @@ public class CallIntentProcessor {
             Context context,
             CallsManager callsManager,
             Intent intent) {
-        if (shouldPreventDuplicateVideoCall(context, callsManager, intent)) {
-            return;
-        }
-
         Uri handle = intent.getData();
         String scheme = handle.getScheme();
         String uriString = handle.getSchemeSpecificPart();
+        Bundle clientExtras = null;
 
-        if (!PhoneAccount.SCHEME_VOICEMAIL.equals(scheme)) {
+        if (clientExtras == null) {
+            clientExtras = new Bundle();
+        }
+
+        boolean isSkipSchemaParsing = intent.getBooleanExtra(
+                TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING, false);
+        Log.d(CallIntentProcessor.class, "isSkipSchemaParsing = " + isSkipSchemaParsing);
+        if (isSkipSchemaParsing) {
+            clientExtras.putBoolean(TelephonyProperties.EXTRA_SKIP_SCHEMA_PARSING,
+                    isSkipSchemaParsing);
+            handle = Uri.fromParts(PhoneAccount.SCHEME_TEL, handle.toString(), null);
+        }
+
+        if (!PhoneAccount.SCHEME_VOICEMAIL.equals(scheme) && !isSkipSchemaParsing) {
             handle = Uri.fromParts(PhoneNumberUtils.isUriNumber(uriString) ?
                     PhoneAccount.SCHEME_SIP : PhoneAccount.SCHEME_TEL, uriString, null);
         }
@@ -80,13 +93,42 @@ public class CallIntentProcessor {
         PhoneAccountHandle phoneAccountHandle = intent.getParcelableExtra(
                 TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE);
 
-        Bundle clientExtras = null;
         if (intent.hasExtra(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS)) {
             clientExtras = intent.getBundleExtra(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS);
         }
-        if (clientExtras == null) {
-            clientExtras = new Bundle();
+        boolean isConferenceUri = intent.getBooleanExtra(
+                TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, false);
+        Log.d(CallIntentProcessor.class, "isConferenceUri = "+isConferenceUri);
+        if (isConferenceUri) {
+            clientExtras.putBoolean(TelephonyProperties.EXTRA_DIAL_CONFERENCE_URI, isConferenceUri);
         }
+        boolean isAddParticipant = intent.getBooleanExtra(
+                TelephonyProperties.ADD_PARTICIPANT_KEY, false);
+        Log.d(CallIntentProcessor.class, "isAddparticipant = "+isAddParticipant);
+        if (isAddParticipant) {
+            clientExtras.putBoolean(TelephonyProperties.ADD_PARTICIPANT_KEY, isAddParticipant);
+        }
+
+        final int callDomain = intent.getIntExtra(
+                QtiVideoCallConstants.EXTRA_CALL_DOMAIN, QtiVideoCallConstants.DOMAIN_AUTOMATIC);
+        Log.d(CallIntentProcessor.class, "callDomain = " + callDomain);
+        clientExtras.putInt(QtiVideoCallConstants.EXTRA_CALL_DOMAIN, callDomain);
+
+        final int videoState = intent.getIntExtra(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE,
+                VideoProfile.STATE_AUDIO_ONLY);
+        clientExtras.putInt(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, videoState);
+
+        boolean isCallPull = intent.getBooleanExtra(TelephonyProperties.EXTRA_IS_CALL_PULL, false);
+        Log.d(CallIntentProcessor.class, "processOutgoingCallIntent callPull = " + isCallPull);
+        if (isCallPull) {
+            clientExtras.putBoolean(TelephonyProperties.EXTRA_IS_CALL_PULL, isCallPull);
+        }
+
+        Log.i(CallIntentProcessor.class, " processOutgoingCallIntent handle = " + handle
+                + ",scheme = " + scheme + ", uriString = " + uriString
+                + ", isSkipSchemaParsing = " + isSkipSchemaParsing
+                + ", isAddParticipant = " + isAddParticipant
+                + ", isCallPull = " + isCallPull);
 
         // Ensure call subject is passed on to the connection service.
         if (intent.hasExtra(TelecomManager.EXTRA_CALL_SUBJECT)) {

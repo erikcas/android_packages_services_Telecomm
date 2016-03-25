@@ -225,6 +225,20 @@ public final class InCallController extends CallsManagerListenerBase {
     }
 
     @Override
+    public void onMergeFailed(Call call) {
+        if (!mInCallServices.isEmpty()) {
+            Log.i(this, "onMergeFailed :" + call);
+            for (IInCallService inCallService : mInCallServices.values()) {
+                try {
+                    inCallService.onMergeFailed(toParcelableCall(call, true));
+                } catch (RemoteException ignored) {
+                    Log.i(this, "onMergeFailed exception:" + ignored);
+                }
+            }
+        }
+    }
+
+    @Override
     public void onConnectionServiceChanged(
             Call call,
             ConnectionServiceWrapper oldService,
@@ -674,7 +688,8 @@ public final class InCallController extends CallsManagerListenerBase {
                 call.getVideoState(),
                 conferenceableCallIds,
                 call.getIntentExtras(),
-                call.getExtras());
+                call.getExtras(),
+                call.mIsActiveSub);
     }
 
     private static int getParcelableState(Call call) {
@@ -773,6 +788,18 @@ public final class InCallController extends CallsManagerListenerBase {
 
         Connection.CAPABILITY_CAN_SEND_RESPONSE_VIA_CONNECTION,
         android.telecom.Call.Details.CAPABILITY_CAN_SEND_RESPONSE_VIA_CONNECTION
+
+        Connection.CAPABILITY_VOICE_PRIVACY,
+        android.telecom.Call.Details.CAPABILITY_VOICE_PRIVACY,
+
+        Connection.CAPABILITY_ADD_PARTICIPANT,
+        android.telecom.Call.Details.CAPABILITY_ADD_PARTICIPANT,
+
+        Connection.CAPABILITY_SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL,
+        android.telecom.Call.Details.CAPABILITY_SUPPORTS_DOWNGRADE_TO_VOICE_LOCAL,
+
+        Connection.CAPABILITY_SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE,
+        android.telecom.Call.Details.CAPABILITY_SUPPORTS_DOWNGRADE_TO_VOICE_REMOTE
     };
 
     private static int convertConnectionToCallCapabilities(int connectionCapabilities) {

@@ -34,7 +34,6 @@ import android.telecom.TelecomManager;
 import android.telecom.VideoProfile;
 import android.telephony.PhoneNumberUtils;
 import android.text.TextUtils;
-import android.widget.Toast;
 
 // TODO: Needed for move to system service: import com.android.internal.R;
 
@@ -123,7 +122,7 @@ public class UserCallIntentProcessor {
                 VideoProfile.STATE_AUDIO_ONLY);
         Log.d(this, "processOutgoingCallIntent videoState = " + videoState);
 
-        if (VideoProfile.isVideo(videoState)
+        if (!isEmergencyVideoCallingSupported() && VideoProfile.isVideo(videoState)
                 && TelephonyUtil.shouldProcessAsEmergency(mContext, handle)) {
             Log.d(this, "Emergency call...Converting video call to voice...");
             videoState = VideoProfile.STATE_AUDIO_ONLY;
@@ -131,9 +130,11 @@ public class UserCallIntentProcessor {
                     videoState);
         }
 
-        if (VideoProfile.isVideo(videoState) && isTtyModeEnabled()) {
-            Toast.makeText(mContext, mContext.getResources().getString(R.string.
-                    video_call_not_allowed_if_tty_enabled), Toast.LENGTH_SHORT).show();
+        if (VideoProfile.isVideo(videoState) && isTtyModeEnabled() &&
+                !TelephonyUtil.shouldProcessAsEmergency(mContext, handle)) {
+
+            showErrorDialogForRestrictedOutgoingCall(mContext,
+                    R.string.video_call_not_allowed_if_tty_enabled);
             Log.d(this, "Rejecting video calls as tty is enabled");
             return;
         }
@@ -148,6 +149,11 @@ public class UserCallIntentProcessor {
                 mContext.getContentResolver(),
                 android.provider.Settings.Secure.PREFERRED_TTY_MODE,
                 TelecomManager.TTY_MODE_OFF) != TelecomManager.TTY_MODE_OFF);
+    }
+
+    private boolean isEmergencyVideoCallingSupported() {
+        return mContext.getResources().getBoolean(
+                R.bool.config_enable_emergency_video_calling);
     }
 
     private boolean isDefaultOrSystemDialer(String callingPackageName) {
